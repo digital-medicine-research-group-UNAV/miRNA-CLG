@@ -166,17 +166,25 @@ def compute_mutual_info(nodo0, nodo1, datos0, datos1, pz0, pz1, data, precision,
         f_xyz0_kde = gaussian_kde(np.vstack((datos0.iloc[:, nodo0].values, datos0.iloc[:, nodo1].values)))
         f_xyz1_kde = gaussian_kde(np.vstack((datos1.iloc[:, nodo0].values, datos1.iloc[:, nodo1].values)))
 
-        # Define integration function
-        integrand0 = lambda a, b: f_xyz0_kde.evaluate(np.vstack([a, b])) * math.log((f_xyz0_kde.evaluate(np.vstack([a, b])) / ((f_xz0_kde.evaluate([a])[0] * f_yz0_kde.evaluate([b])[0]) + MIN_DOUBLE)) + MIN_DOUBLE)
-        integrand1 = lambda a, b: f_xyz1_kde.evaluate(np.vstack([a, b])) * math.log((f_xyz1_kde.evaluate(np.vstack([a, b])) / ((f_xz1_kde.evaluate([a])[0] * f_yz1_kde.evaluate([b])[0]) + MIN_DOUBLE)) + MIN_DOUBLE)
-
         # Define grid points for integration
         x_pts = np.linspace(data.iloc[:, nodo0].min() - data.iloc[:, nodo0].std(), data.iloc[:, nodo0].max() + data.iloc[:, nodo0].std(), precision)
         y_pts = np.linspace(data.iloc[:, nodo1].min() - data.iloc[:, nodo1].std(), data.iloc[:, nodo1].max() + data.iloc[:, nodo1].std(), precision)
 
-        # Precompute the integrals
-        integ0 = np.array([[integrand0(x, y) for y in y_pts] for x in x_pts])
-        integ1 = np.array([[integrand1(x, y) for y in y_pts] for x in x_pts])
+        # Evaluate all KDEs on the full grid at once (vectorized).
+        xx, yy = np.meshgrid(x_pts, y_pts, indexing='ij')
+        x_flat = xx.ravel()
+        y_flat = yy.ravel()
+        grid_points = np.vstack([x_flat, y_flat])
+
+        fxy0 = f_xyz0_kde.evaluate(grid_points)
+        fx0 = f_xz0_kde.evaluate(x_flat)
+        fy0 = f_yz0_kde.evaluate(y_flat)
+        integ0 = (fxy0 * np.log(fxy0 / (fx0 * fy0 + MIN_DOUBLE) + MIN_DOUBLE)).reshape(precision, precision)
+
+        fxy1 = f_xyz1_kde.evaluate(grid_points)
+        fx1 = f_xz1_kde.evaluate(x_flat)
+        fy1 = f_yz1_kde.evaluate(y_flat)
+        integ1 = (fxy1 * np.log(fxy1 / (fx1 * fy1 + MIN_DOUBLE) + MIN_DOUBLE)).reshape(precision, precision)
 
         # Compute the mutual information
         summand = pz0 * np.trapz(np.trapz(integ0, x_pts, axis=0), y_pts, axis=0) + pz1 * np.trapz(np.trapz(integ1, x_pts, axis=0), y_pts, axis=0)
